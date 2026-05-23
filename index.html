@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ Power System</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --surface2: #1e2430;
+  --border:   #30363d;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --solar:    #40c057;
+  --load:     #fd7e14;
+  --charged:  #339af0;
+  --dis:      #fa5252;
+  --soc:      #cc5de8;
+  --radius:   10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  padding: 1.25rem; max-width: 1400px; margin: 0 auto; font-size: 14px;
+}
+
+/* ── Tab nav ──────────────────────────────── */
+.tab-nav {
+  display: flex; justify-content: flex-end;
+  gap: .4rem; margin-bottom: .8rem;
+}
+.tab-btn {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted); padding: .32rem .85rem;
+  border-radius: 20px; cursor: pointer; font-size: .78rem;
+  transition: all .15s; white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); border-color: #555; }
+.tab-btn.active-ps { background: #152015; border-color: var(--solar); color: var(--solar); font-weight: 600; }
+.tab-btn.active-ea { background: #151525; border-color: var(--charged); color: var(--charged); font-weight: 600; }
+
+/* ── Shared card & chart styles ───────────── */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1rem 1.2rem;
+}
+.card-label {
+  font-size: .72rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: .35rem;
+}
+.card-value { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.card-sub   { font-size: .72rem; color: var(--muted); margin-top: .25rem; }
+.chart-full {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.1rem; margin-bottom: 1rem;
+}
+.chart-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.1rem;
+}
+.chart-title {
+  font-size: .8rem; font-weight: 600; margin-bottom: .8rem;
+  display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; color: var(--text);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.c-solar   { color: var(--solar); }
+.c-load    { color: var(--load); }
+.c-soc     { color: var(--soc); }
+.c-charged { color: var(--charged); }
+.c-dis     { color: var(--dis); }
+.c-grey    { color: var(--muted); }
+.c-pos     { color: var(--solar); }
+.c-neg     { color: var(--dis); }
+
+/* ── Power System specific ────────────────── */
+.ps-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem;
+}
+.ps-header h1 { font-size: 1.45rem; font-weight: 700; color: #fff; }
+.badge {
+  display: flex; align-items: center; gap: .4rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: .3rem .85rem; font-size: .78rem;
+}
+.dot-live  { width: 7px; height: 7px; border-radius: 50%; background: var(--solar); box-shadow: 0 0 6px var(--solar); animation: pulse 2s infinite; }
+.dot-stale { background: var(--dis); box-shadow: 0 0 6px var(--dis); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.strip {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .7rem 1rem;
+  font-size: .85rem; margin-bottom: 1rem;
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+}
+.strip b { font-weight: 700; }
+.row3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 1rem; margin-bottom: 1rem; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+@media(max-width:700px){ .row3,.row2 { grid-template-columns:1fr; } }
+@media(max-width:900px){ .row3 { grid-template-columns:1fr 1fr; } }
+.today-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.tstat .tval { font-size: 1.1rem; font-weight: 700; }
+.tstat .tlabel { font-size: .7rem; color: var(--muted); margin-top: .1rem; }
+.consumers { display: flex; flex-direction: column; gap: .4rem; }
+.consumer {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--surface2); border-radius: 6px; padding: .45rem .75rem; font-size: .83rem;
+}
+.consumer .cname { display: flex; align-items: center; gap: .5rem; }
+.consumer .cw { font-weight: 700; color: var(--load); }
+.crank { font-size: .9rem; }
+.stale-warn {
+  background: #2a1a1a; border: 1px solid var(--dis); color: var(--dis);
+  border-radius: var(--radius); padding: .55rem 1rem; font-size: .82rem;
+  margin-bottom: 1rem; display: none;
+}
+
+/* ── Energy Analysis specific ─────────────── */
+.ea-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;
+}
+.ea-header h1 { font-size: 1.45rem; font-weight: 700; color: #fff; }
+.ea-header p  { color: var(--muted); font-size: 0.83rem; margin-top: 3px; }
+.load-btn {
+  display: flex; align-items: center; gap: .4rem;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: .45rem 1rem;
+  border-radius: var(--radius); cursor: pointer; font-size: .83rem; transition: background .15s;
+}
+.load-btn:hover { background: #252d3a; }
+.period-bar {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .7rem 1rem;
+  display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; margin-bottom: 1.25rem;
+}
+.pbtn {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--muted); padding: .32rem .85rem;
+  border-radius: 6px; cursor: pointer; font-size: .8rem;
+  transition: all .15s; white-space: nowrap;
+}
+.pbtn:hover { color: var(--text); border-color: #555; }
+.pbtn.on { background: #1a3a2a; border-color: var(--solar); color: var(--solar); font-weight: 600; }
+.sep { width: 1px; height: 1.4rem; background: var(--border); flex-shrink: 0; }
+.dlabel { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.dinput {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: .32rem .6rem; border-radius: 6px; font-size: .8rem;
+}
+.stats {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  gap: 1rem; margin-bottom: 1.25rem;
+}
+@media(max-width:800px){ .stats { grid-template-columns: repeat(2,1fr); } }
+@media(max-width:480px){ .stats { grid-template-columns: 1fr; } }
+.chart-row {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 1.25rem; margin-bottom: 1.25rem;
+}
+@media(max-width:700px){ .chart-row { grid-template-columns: 1fr; } }
+.analysis {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.2rem 1.5rem;
+}
+.analysis h2 { font-size: .92rem; font-weight: 700; color: #fff; margin-bottom: .9rem; letter-spacing: .02em; }
+.arow {
+  display: grid; grid-template-columns: 110px 1fr;
+  gap: .5rem 1rem; padding: .65rem 0;
+  border-top: 1px solid var(--border); font-size: .84rem; line-height: 1.6;
+}
+.arow:first-of-type { border-top: none; padding-top: 0; }
+.alabel { font-weight: 600; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; padding-top: .15rem; }
+.abody  { color: var(--text); }
+.hl           { font-weight: 700; }
+.hl-solar     { color: var(--solar);   font-weight: 700; }
+.hl-load      { color: var(--load);    font-weight: 700; }
+.hl-charged   { color: var(--charged); font-weight: 700; }
+.hl-dis       { color: var(--dis);     font-weight: 700; }
+.hl-soc       { color: var(--soc);     font-weight: 700; }
+.empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
+.empty h3 { font-size: 1rem; color: var(--text); margin-bottom: .4rem; }
+#csvFile { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Tab navigation (always visible, top-right) -->
+<div class="tab-nav">
+  <button class="tab-btn active-ps" id="tabPS" onclick="switchTab('ps')">⚡ Power System</button>
+  <button class="tab-btn" id="tabEA" onclick="switchTab('ea')">☀️ Energy Analysis</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     POWER SYSTEM PANEL
+════════════════════════════════════════════ -->
+<div id="panelPS">
+
+  <div class="ps-header">
+    <div>
+      <h1>⚡ Power System</h1>
+      <p style="color:var(--muted);font-size:.8rem;margin-top:3px">Live snapshot · refreshes every 5 minutes</p>
+    </div>
+    <div class="badge">
+      <span class="dot-live" id="liveDot"></span>
+      <span id="updatedLabel">Loading…</span>
+    </div>
+  </div>
+
+  <div class="stale-warn" id="staleWarn">
+    ⚠️ Data is more than 10 minutes old — the update service may be down.
+  </div>
+
+  <div class="strip" id="statusStrip">—</div>
+
+  <div class="row3">
+    <div class="card">
+      <div class="card-label">🔋 Battery SOC</div>
+      <div class="card-value c-soc" id="mSoc">—</div>
+      <div class="card-sub" id="mFlow">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">⚡ Energy Remaining</div>
+      <div class="card-value c-charged" id="mWh">—</div>
+      <div class="card-sub" id="mAh">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">⏱ Time to Change</div>
+      <div class="card-value" id="mTime">—</div>
+      <div class="card-sub" id="mTimeSub">—</div>
+    </div>
+  </div>
+
+  <div class="row3">
+    <div class="card">
+      <div class="card-label">☀️ Solar</div>
+      <div class="card-value c-solar" id="pSolar">—</div>
+      <div class="card-sub">current output</div>
+    </div>
+    <div class="card">
+      <div class="card-label">🔋 Battery</div>
+      <div class="card-value" id="pBattery">—</div>
+      <div class="card-sub" id="pBatterySub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">🏠 Home Load</div>
+      <div class="card-value c-load" id="pLoad">—</div>
+      <div class="card-sub">current draw</div>
+    </div>
+  </div>
+
+  <div class="chart-full">
+    <div class="chart-title">
+      <span class="dot" style="background:var(--solar)"></span> Solar &nbsp;
+      <span class="dot" style="background:var(--load)"></span> Load &nbsp;
+      <span class="dot" style="background:var(--charged)"></span> Battery — 24h Power (W)
+    </div>
+    <canvas id="cPower" height="80"></canvas>
+  </div>
+
+  <div class="row2">
+    <div class="chart-card">
+      <div class="chart-title">
+        <span class="dot" style="background:var(--soc)"></span> Battery SOC — 24h (%)
+      </div>
+      <canvas id="cSoc" height="150"></canvas>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:1rem;">
+      <div>
+        <div class="card-label" style="margin-bottom:.6rem">📅 Today at a Glance</div>
+        <div class="today-grid">
+          <div class="tstat"><div class="tval c-solar" id="tSolar">—</div><div class="tlabel">☀️ Solar</div></div>
+          <div class="tstat"><div class="tval c-load"  id="tLoad">—</div><div class="tlabel">🏠 Load</div></div>
+          <div class="tstat"><div class="tval c-charged" id="tCharged">—</div><div class="tlabel">⬆ Charged</div></div>
+          <div class="tstat"><div class="tval c-dis" id="tDischarged">—</div><div class="tlabel">⬇ Discharged</div></div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:.9rem">
+        <div class="card-label" style="margin-bottom:.6rem">📊 System Performance</div>
+        <div class="today-grid">
+          <div class="tstat"><div class="tval" id="pSuf">—</div><div class="tlabel">Self-Sufficient</div></div>
+          <div class="tstat"><div class="tval" id="pNet">—</div><div class="tlabel">Battery Net</div></div>
+          <div class="tstat"><div class="tval" id="pCurrent">—</div><div class="tlabel">Battery Current</div></div>
+          <div class="tstat"><div class="tval c-soc" id="pAvgSoc">—</div><div class="tlabel">Avg SOC (24h)</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="card">
+      <div class="card-label">🔋 BMS 148 Ah</div>
+      <div class="card-value c-soc" id="bms148">—</div>
+      <div class="card-sub" id="bms148sub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">🔋 BMS 50 Ah</div>
+      <div class="card-value c-soc" id="bms50">—</div>
+      <div class="card-sub" id="bms50sub">—</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label" style="margin-bottom:.7rem">⚡ Top Power Consumers</div>
+    <div class="consumers" id="consumers">—</div>
+  </div>
+
+</div><!-- /panelPS -->
+
+
+<!-- ══════════════════════════════════════════
+     ENERGY ANALYSIS PANEL
+════════════════════════════════════════════ -->
+<div id="panelEA" style="display:none">
+
+  <div class="ea-header">
+    <div>
+      <h1>☀️ Energy Analysis</h1>
+      <p id="eaRangeLabel">Loading…</p>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <button class="load-btn" onclick="document.getElementById('csvFile').click()">📂 Load CSV</button>
+      <input type="file" id="csvFile" accept=".csv" onchange="handleFile(event)">
+    </div>
+  </div>
+
+  <div class="period-bar">
+    <button class="pbtn" id="p7"  onclick="period('7d')">Last 7 Days</button>
+    <button class="pbtn" id="p30" onclick="period('30d')">Last 30 Days</button>
+    <button class="pbtn" id="pM"  onclick="period('month')">This Month</button>
+    <button class="pbtn" id="pLM" onclick="period('lastmonth')">Last Month</button>
+    <button class="pbtn" id="pY"  onclick="period('year')">This Year</button>
+    <button class="pbtn on" id="pA" onclick="period('all')">All Data</button>
+    <div class="sep"></div>
+    <span class="dlabel">From</span>
+    <input type="date" class="dinput" id="dFrom" onchange="period('custom')">
+    <span class="dlabel">to</span>
+    <input type="date" class="dinput" id="dTo"   onchange="period('custom')">
+  </div>
+
+  <div class="stats">
+    <div class="card">
+      <div class="card-label">☀️ Solar Produced</div>
+      <div class="card-value c-solar" id="vSolar">—</div>
+      <div class="card-sub"           id="sSolar">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">🏠 Home Consumed</div>
+      <div class="card-value c-load"  id="vLoad">—</div>
+      <div class="card-sub"           id="sLoad">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">⚡ Self-Sufficiency</div>
+      <div class="card-value c-charged" id="vSuf">—</div>
+      <div class="card-sub"             id="sSuf">solar ÷ load</div>
+    </div>
+    <div class="card">
+      <div class="card-label">🔋 Battery Net</div>
+      <div class="card-value" id="vNet">—</div>
+      <div class="card-sub"   id="sNet">charged − discharged</div>
+    </div>
+  </div>
+
+  <div class="chart-full">
+    <div class="chart-title">
+      <span class="dot" style="background:var(--solar)"></span> Solar &nbsp;vs&nbsp;
+      <span class="dot" style="background:var(--load)"></span> Load — Daily kWh
+    </div>
+    <canvas id="cSolarLoad" height="85"></canvas>
+  </div>
+
+  <div class="chart-row">
+    <div class="chart-card">
+      <div class="chart-title">
+        <span class="dot" style="background:var(--charged)"></span> Charged &nbsp;vs&nbsp;
+        <span class="dot" style="background:var(--dis)"></span> Discharged — kWh
+      </div>
+      <canvas id="cBattery" height="160"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">
+        <span class="dot" style="background:var(--soc)"></span> Highest SOC For The Day (%)
+      </div>
+      <canvas id="cSocEa" height="160"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-full">
+    <div class="chart-title">Daily Battery Net kWh
+      <span style="color:var(--muted);font-weight:400;margin-left:.4rem">(green = battery gained · red = battery drawn down)</span>
+    </div>
+    <canvas id="cNet" height="70"></canvas>
+  </div>
+
+  <div class="analysis">
+    <h2>📊 Analysis</h2>
+    <div id="aContent">
+      <div class="empty">
+        <h3>Loading data…</h3>
+        <p>If this persists, click <strong>Load CSV</strong> to select energy_log.csv manually.</p>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /panelEA -->
+
+
+<script>
+/* ────────────────────────────────────────────────
+   Shared constants & helpers
+──────────────────────────────────────────────── */
+const GRID   = '#1e2430';
+const TICK   = { color: '#8b949e', font: { size: 10 } };
+const TIP    = { backgroundColor: '#1e2430', borderColor: '#30363d', borderWidth: 1,
+                 titleColor: '#c9d1d9', bodyColor: '#8b949e', padding: 8 };
+const LEGEND = { labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12, padding: 14 } };
+
+function $id(id) { return document.getElementById(id); }
+function setEl(id, val) { $id(id).textContent = val; }
+const f1 = n => (+n).toFixed(1);
+const f2 = n => (+n).toFixed(2);
+const f3 = n => (+n).toFixed(3);
+const ri = n => Math.round(+n);
+
+/* ────────────────────────────────────────────────
+   Tab management
+──────────────────────────────────────────────── */
+let activeTab = 'ps';
+
+function switchTab(tab) {
+  activeTab = tab;
+  $id('panelPS').style.display = tab === 'ps' ? '' : 'none';
+  $id('panelEA').style.display = tab === 'ea' ? '' : 'none';
+  $id('tabPS').className = 'tab-btn' + (tab === 'ps' ? ' active-ps' : '');
+  $id('tabEA').className = 'tab-btn' + (tab === 'ea' ? ' active-ea' : '');
+  if (tab === 'ps' && psLastData) {
+    renderPowerChart(psLastHistory);
+    renderSocChart(psLastHistory);
+  }
+  if (tab === 'ea' && allData.length) drawAll(view);
+}
+
+/* ════════════════════════════════════════════════
+   POWER SYSTEM
+════════════════════════════════════════════════ */
+const REFRESH_MS = 5 * 60 * 1000;
+let psCharts    = {};
+let psLastData    = null;
+let psLastHistory = [];
+
+async function psLoad() {
+  const bust = '?_=' + Date.now();
+  try {
+    const [dRes, hRes] = await Promise.all([
+      fetch('./data.json'    + bust),
+      fetch('./history.json' + bust),
+    ]);
+    psLastData    = await dRes.json();
+    psLastHistory = await hRes.json();
+    psRender(psLastData, psLastHistory);
+  } catch(e) {
+    setEl('updatedLabel', 'Failed to load data');
+  }
+}
+
+function psRender(d, history) {
+  renderPsHeader(d);
+  renderStrip(d);
+  renderPsCards(d);
+  renderToday(d);
+  renderBanks(d);
+  renderConsumers(d);
+  if (activeTab === 'ps') {
+    renderPowerChart(history);
+    renderSocChart(history);
+  }
+}
+
+function renderPsHeader(d) {
+  const updated = new Date(d.updated);
+  const diffMin = Math.round((Date.now() - updated.getTime()) / 60000);
+  const dot  = $id('liveDot');
+  const warn = $id('staleWarn');
+  const timeStr = updated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (diffMin > 10) {
+    dot.classList.add('dot-stale');
+    warn.style.display = 'block';
+    setEl('updatedLabel', `Stale · ${timeStr}`);
+  } else {
+    dot.classList.remove('dot-stale');
+    warn.style.display = 'none';
+    setEl('updatedLabel', `Updated ${timeStr}`);
+  }
+}
+
+function renderStrip(d) {
+  const hour  = new Date().getHours();
+  const night = hour >= 19 || hour < 6;
+  const timeIcon = night ? '🌙 Night' : '☀️ Day';
+  let flowHtml;
+  if (d.flow === 'Charging') {
+    flowHtml = `⚡ <b>Charging</b> · ${f1(d.soc)}% · ${ri(d.solar_w)} W solar → ${ri(d.load_w)} W home · Full in ${f1(d.time_to_change)} h`;
+  } else if (d.flow === 'Discharging') {
+    flowHtml = `🔋 <b>Discharging</b> · ${f1(d.soc)}% · ${ri(d.load_w)} W home · ${f1(d.time_to_change)} h to empty`;
+  } else {
+    flowHtml = `⚖️ <b>Balanced</b> · ${f1(d.soc)}% · ${ri(d.solar_w)} W solar = ${ri(d.load_w)} W home`;
+  }
+  $id('statusStrip').innerHTML = `${timeIcon} &nbsp;·&nbsp; ${flowHtml}`;
+}
+
+function renderPsCards(d) {
+  setEl('mSoc', f1(d.soc) + '%');
+  setEl('mFlow', d.flow);
+  setEl('mWh',  ri(d.wh_remaining) + ' Wh');
+  setEl('mAh',  f1(d.ah_remaining) + ' Ah remaining');
+
+  const timeEl = $id('mTime');
+  timeEl.textContent = f1(d.time_to_change) + ' h';
+  timeEl.className = 'card-value ' + (d.flow === 'Charging' ? 'c-solar' : d.flow === 'Discharging' ? 'c-dis' : 'c-grey');
+  setEl('mTimeSub', d.flow === 'Charging' ? 'to full' : d.flow === 'Discharging' ? 'to empty' : 'balanced');
+
+  setEl('pSolar', ri(d.solar_w) + ' W');
+
+  const batEl  = $id('pBattery');
+  const batSub = $id('pBatterySub');
+  if (d.battery_w > 0) {
+    batEl.textContent = '+' + ri(d.battery_w) + ' W';
+    batEl.className   = 'card-value c-solar';
+    batSub.textContent = 'charging';
+  } else if (d.battery_w < 0) {
+    batEl.textContent = ri(d.battery_w) + ' W';
+    batEl.className   = 'card-value c-dis';
+    batSub.textContent = 'discharging';
+  } else {
+    batEl.textContent = '0 W';
+    batEl.className   = 'card-value c-grey';
+    batSub.textContent = 'idle';
+  }
+
+  setEl('pLoad', ri(d.load_w) + ' W');
+}
+
+function renderToday(d) {
+  setEl('tSolar',      f2(d.solar_today)      + ' kWh');
+  setEl('tLoad',       f2(d.load_today)       + ' kWh');
+  setEl('tCharged',    f2(d.charged_today)    + ' kWh');
+  setEl('tDischarged', f2(d.discharged_today) + ' kWh');
+
+  const sufEl = $id('pSuf');
+  sufEl.textContent = f1(d.self_sufficiency) + '%';
+  sufEl.className = 'tval ' + (d.self_sufficiency >= 80 ? 'c-solar' : d.self_sufficiency >= 50 ? 'c-charged' : 'c-dis');
+
+  const netEl = $id('pNet');
+  netEl.textContent = (d.battery_net >= 0 ? '+' : '') + f2(d.battery_net) + ' kWh';
+  netEl.className = 'tval ' + (d.battery_net >= 0 ? 'c-solar' : 'c-dis');
+
+  setEl('pCurrent', f1(Math.abs(d.battery_a)) + ' A');
+}
+
+function renderBanks(d) {
+  setEl('bms148',    f1(d.bms148_soc) + '%');
+  setEl('bms148sub', f1(148 * d.bms148_soc / 100) + ' Ah remaining');
+  setEl('bms50',     f1(d.bms50_soc)  + '%');
+  setEl('bms50sub',  f1(50  * d.bms50_soc  / 100) + ' Ah remaining');
+}
+
+function renderConsumers(d) {
+  const medals = ['🥇','🥈','🥉'];
+  const top  = d.consumers.filter(c => c.w > 0);
+  const list = (top.length ? top : d.consumers).slice(0, 5);
+  $id('consumers').innerHTML = list.length
+    ? list.map((c, i) => `
+        <div class="consumer">
+          <div class="cname"><span class="crank">${medals[i] || ''}</span><span>${c.name}</span></div>
+          <span class="cw">${ri(c.w)} W</span>
+        </div>`).join('')
+    : '<span style="color:var(--muted)">No active consumers</span>';
+}
+
+function renderPowerChart(history) {
+  const labels = history.map(h => new Date(h.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+  if (psCharts.power) psCharts.power.destroy();
+  psCharts.power = new Chart($id('cPower').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        psLine('Solar',   history.map(h => h.solar),   '#40c057'),
+        psLine('Load',    history.map(h => h.load),    '#fd7e14'),
+        psLine('Battery', history.map(h => h.battery), '#339af0'),
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true, animation: { duration: 300 },
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12, padding: 14 } },
+        tooltip: { ...TIP, callbacks: { label: c => ` ${c.dataset.label}: ${Math.round(c.raw)} W` } }
+      },
+      scales: {
+        x: { ticks: { ...TICK, maxTicksLimit: 12 }, grid: { color: GRID } },
+        y: { ticks: TICK, grid: { color: GRID },
+             title: { display: true, text: 'W', color: '#8b949e', font: { size: 10 } } }
+      }
+    }
+  });
+  const avg = psAvgSoc(history);
+  setEl('pAvgSoc', avg !== null ? f1(avg) + '%' : '—');
+}
+
+function renderSocChart(history) {
+  const pts = history.filter(h => h.soc > 0);
+  const labels = pts.map(h => new Date(h.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+  if (psCharts.soc) psCharts.soc.destroy();
+  psCharts.soc = new Chart($id('cSoc').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'SOC %',
+        data: pts.map(h => h.soc),
+        borderColor: '#cc5de8', backgroundColor: '#cc5de820',
+        fill: true, tension: 0.3,
+        pointRadius: pts.length > 50 ? 0 : 2, pointBackgroundColor: '#cc5de8',
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true, animation: { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...TIP, callbacks: { label: c => ` SOC: ${c.raw.toFixed(1)}%` } }
+      },
+      scales: {
+        x: { ticks: { ...TICK, maxTicksLimit: 8 }, grid: { color: GRID } },
+        y: { min: 0, max: 100, ticks: TICK, grid: { color: GRID },
+             title: { display: true, text: '%', color: '#8b949e', font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function psAvgSoc(history) {
+  const pts = history.filter(h => h.soc > 0);
+  return pts.length ? pts.reduce((a, h) => a + h.soc, 0) / pts.length : null;
+}
+
+function psLine(label, data, color) {
+  return {
+    label, data,
+    borderColor: color, backgroundColor: color + '18',
+    fill: true, tension: 0.3, borderWidth: 2,
+    pointRadius: data.length > 100 ? 0 : 2,
+  };
+}
+
+/* ════════════════════════════════════════════════
+   ENERGY ANALYSIS
+════════════════════════════════════════════════ */
+let allData = [];
+let view    = [];
+const eaCx  = {};
+
+async function eaAutoLoad() {
+  try {
+    const r = await fetch('./energy_log.csv?_=' + Date.now());
+    if (!r.ok) throw new Error('not ok');
+    parseCSV(await r.text());
+  } catch {
+    $id('eaRangeLabel').textContent = 'Could not auto-load — click Load CSV to select the file.';
+  }
+}
+
+function handleFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => parseCSV(ev.target.result);
+  r.readAsText(f);
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  allData = lines.slice(1).map(l => {
+    const v = l.split(',');
+    return {
+      date:       (v[0] || '').trim(),
+      solar:      +v[1] || 0,
+      load:       +v[2] || 0,
+      charged:    +v[3] || 0,
+      discharged: +v[4] || 0,
+      net:        +v[5] || 0,
+      soc:        +v[6] || 0,
+    };
+  }).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!allData.length) return;
+  $id('dFrom').value = allData[0].date;
+  $id('dTo').value   = allData[allData.length - 1].date;
+  period('all');
+}
+
+function period(mode) {
+  document.querySelectorAll('.pbtn').forEach(b => b.classList.remove('on'));
+  const last = allData.length ? allData[allData.length - 1].date : new Date().toISOString().slice(0,10);
+  let from, to;
+
+  if (mode === '7d')        { to = last; from = eaShift(last, -6);    $id('p7').classList.add('on');  }
+  else if (mode === '30d')  { to = last; from = eaShift(last, -29);   $id('p30').classList.add('on'); }
+  else if (mode === 'month'){
+    const d = new Date(last);
+    from = `${d.getFullYear()}-${pad(d.getMonth()+1)}-01`; to = last;
+    $id('pM').classList.add('on');
+  }
+  else if (mode === 'lastmonth') {
+    const d = new Date(last); d.setDate(1); d.setMonth(d.getMonth()-1);
+    from = d.toISOString().slice(0,10);
+    to   = new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().slice(0,10);
+    $id('pLM').classList.add('on');
+  }
+  else if (mode === 'year') { to = last; from = `${new Date(last).getFullYear()}-01-01`; $id('pY').classList.add('on'); }
+  else if (mode === 'all')  { from = allData.length ? allData[0].date : ''; to = last; $id('pA').classList.add('on'); }
+  else { from = $id('dFrom').value; to = $id('dTo').value; }
+
+  if (mode !== 'custom') { $id('dFrom').value = from; $id('dTo').value = to; }
+  view = allData.filter(d => d.date >= from && d.date <= to);
+  eaRender();
+}
+
+function eaShift(dateStr, days) {
+  const d = new Date(dateStr); d.setDate(d.getDate() + days); return d.toISOString().slice(0,10);
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+
+function eaRender() {
+  const n = view.length;
+  if (!allData.length) return;
+
+  $id('eaRangeLabel').textContent =
+    n === 0 ? 'No data in selected range' :
+    n === 1 ? `1 day · ${view[0].date}` :
+    `${view[0].date}  →  ${view[n-1].date}  (${n} days)`;
+
+  if (n === 0) {
+    eaClearStats();
+    drawAll([]);
+    $id('aContent').innerHTML = `<div class="empty"><h3>No data in range</h3><p>Try a wider period.</p></div>`;
+    return;
+  }
+
+  const T = view.reduce((a, d) => ({
+    solar:      a.solar      + d.solar,
+    load:       a.load       + d.load,
+    charged:    a.charged    + d.charged,
+    discharged: a.discharged + d.discharged,
+    net:        a.net        + d.net,
+  }), { solar:0, load:0, charged:0, discharged:0, net:0 });
+
+  eaUpdateStats(T, n);
+  buildAnalysis(T, view, n);
+  if (activeTab === 'ea') drawAll(view);
+}
+
+function eaClearStats() {
+  ['vSolar','vLoad','vSuf','vNet'].forEach(id => setEl(id, '—'));
+}
+
+function eaUpdateStats(T, n) {
+  const suf = T.load > 0 ? Math.min(T.solar / T.load * 100, 100) : 100;
+  setEl('vSolar', f2(T.solar) + ' kWh');
+  setEl('sSolar', f2(T.solar/n) + ' kWh avg / day');
+  setEl('vLoad',  f2(T.load)  + ' kWh');
+  setEl('sLoad',  f2(T.load/n)  + ' kWh avg / day');
+  setEl('vSuf',   f1(suf) + '%');
+  const netEl = $id('vNet');
+  netEl.textContent = (T.net >= 0 ? '+' : '') + f2(T.net) + ' kWh';
+  netEl.className   = 'card-value ' + (T.net >= 0 ? 'c-pos' : 'c-neg');
+  setEl('sNet', T.net >= 0 ? 'Battery gained energy' : 'Battery was drawn down');
+}
+
+function drawAll(data) {
+  drawSolarLoad(data);
+  drawBattery(data);
+  drawSocEa(data);
+  drawNet(data);
+}
+
+function mkChart(id, type, data, options) {
+  if (eaCx[id]) eaCx[id].destroy();
+  eaCx[id] = new Chart($id(id).getContext('2d'), { type, data, options });
+}
+
+function eaLabels(data) { return data.map(d => d.date.slice(5)); }
+
+function eaBar(label, data, colour) {
+  return { label, data, backgroundColor: colour + '66', borderColor: colour, borderWidth: 1, borderRadius: 3 };
+}
+
+function drawSolarLoad(data) {
+  mkChart('cSolarLoad', 'bar', {
+    labels: eaLabels(data),
+    datasets: [ eaBar('Solar', data.map(d => d.solar), '#40c057'), eaBar('Load', data.map(d => d.load), '#fd7e14') ]
+  }, {
+    responsive: true, maintainAspectRatio: true, animation: { duration: 250 },
+    plugins: { legend: LEGEND, tooltip: { ...TIP, callbacks: { label: c => ` ${c.dataset.label}: ${c.raw.toFixed(3)} kWh` } } },
+    scales: {
+      x: { ticks: { ...TICK, maxTicksLimit: 18 }, grid: { color: GRID } },
+      y: { ticks: TICK, grid: { color: GRID }, title: { display: true, text: 'kWh', color: '#8b949e', font: { size: 10 } } }
+    }
+  });
+}
+
+function drawBattery(data) {
+  mkChart('cBattery', 'bar', {
+    labels: eaLabels(data),
+    datasets: [ eaBar('Charged', data.map(d => d.charged), '#339af0'), eaBar('Discharged', data.map(d => d.discharged), '#fa5252') ]
+  }, {
+    responsive: true, maintainAspectRatio: true, animation: { duration: 250 },
+    plugins: { legend: LEGEND, tooltip: { ...TIP, callbacks: { label: c => ` ${c.dataset.label}: ${c.raw.toFixed(3)} kWh` } } },
+    scales: {
+      x: { ticks: { ...TICK, maxTicksLimit: 14 }, grid: { color: GRID } },
+      y: { ticks: TICK, grid: { color: GRID }, title: { display: true, text: 'kWh', color: '#8b949e', font: { size: 10 } } }
+    }
+  });
+}
+
+function drawSocEa(data) {
+  const pts = data.filter(d => d.soc > 0);
+  mkChart('cSocEa', 'line', {
+    labels: pts.map(d => d.date.slice(5)),
+    datasets: [{
+      label: 'SOC %', data: pts.map(d => d.soc),
+      borderColor: '#cc5de8', backgroundColor: '#cc5de820',
+      fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#cc5de8',
+    }]
+  }, {
+    responsive: true, maintainAspectRatio: true, animation: { duration: 250 },
+    plugins: { legend: { display: false }, tooltip: { ...TIP, callbacks: { label: c => ` SOC: ${c.raw.toFixed(1)}%` } } },
+    scales: {
+      x: { ticks: { ...TICK, maxTicksLimit: 14 }, grid: { color: GRID } },
+      y: { min: 0, max: 100, ticks: TICK, grid: { color: GRID }, title: { display: true, text: '%', color: '#8b949e', font: { size: 10 } } }
+    }
+  });
+}
+
+function drawNet(data) {
+  mkChart('cNet', 'bar', {
+    labels: eaLabels(data),
+    datasets: [{
+      label: 'Net kWh', data: data.map(d => d.net),
+      backgroundColor: data.map(d => d.net >= 0 ? '#40c05766' : '#fa525266'),
+      borderColor:     data.map(d => d.net >= 0 ? '#40c057'   : '#fa5252'),
+      borderWidth: 1, borderRadius: 3,
+    }]
+  }, {
+    responsive: true, maintainAspectRatio: true, animation: { duration: 250 },
+    plugins: {
+      legend: { display: false },
+      tooltip: { ...TIP, callbacks: { label: c => ` Net: ${c.raw >= 0 ? '+' : ''}${c.raw.toFixed(3)} kWh` } }
+    },
+    scales: {
+      x: { ticks: { ...TICK, maxTicksLimit: 18 }, grid: { color: GRID } },
+      y: { ticks: TICK, grid: { color: GRID }, title: { display: true, text: 'kWh', color: '#8b949e', font: { size: 10 } } }
+    }
+  });
+}
+
+function buildAnalysis(T, data, n) {
+  const suf        = T.load > 0 ? Math.min(T.solar / T.load * 100, 100) : 100;
+  const avgSolar   = T.solar / n;
+  const avgLoad    = T.load  / n;
+  const surplus    = T.solar - T.load;
+  const bestSolar  = data.reduce((a, d) => d.solar > a.solar ? d : a);
+  const leastSolar = data.reduce((a, d) => d.solar < a.solar ? d : a);
+  const peakLoad   = data.reduce((a, d) => d.load  > a.load  ? d : a);
+  const bestNet    = data.reduce((a, d) => d.net   > a.net   ? d : a);
+  const worstNet   = data.reduce((a, d) => d.net   < a.net   ? d : a);
+  const posDays    = data.filter(d => d.net >= 0).length;
+  const negDays    = n - posDays;
+  const socPts     = data.filter(d => d.soc > 0);
+  const avgSocVal  = socPts.length ? socPts.reduce((a,d) => a + d.soc, 0) / socPts.length : null;
+  const chargeRatio = T.charged > 0 ? T.discharged / T.charged * 100 : 0;
+  const netC        = T.net >= 0 ? 'c-pos' : 'c-neg';
+  const sufClass    = suf >= 80 ? 'hl-solar' : suf >= 50 ? 'hl-charged' : 'hl-dis';
+
+  let sufVerdict;
+  if      (suf >= 90) sufVerdict = 'Excellent — solar met nearly all consumption.';
+  else if (suf >= 75) sufVerdict = 'Strong performance — solar covered the majority of home consumption.';
+  else if (suf >= 50) sufVerdict = 'Moderate — solar covered roughly half of consumption; the battery bridged the rest.';
+  else                sufVerdict = 'Low — consumption outpaced solar; the battery carried a significant portion of the load.';
+
+  let cdComment;
+  if      (chargeRatio < 80)  cdComment = 'More energy was stored than used — battery reserves built up.';
+  else if (chargeRatio < 105) cdComment = 'Charge and discharge were well-balanced over the period.';
+  else                         cdComment = 'More was drawn from the battery than was stored — net depletion occurred.';
+
+  let trendNote = '';
+  if (data.length >= 5) {
+    const half   = Math.floor(data.length / 2);
+    const first  = data.slice(0,  half).reduce((a,d) => a + d.solar, 0) / half;
+    const second = data.slice(-half).reduce((a,d) => a + d.solar, 0) / half;
+    const delta  = second - first;
+    if      (delta >  0.15) trendNote = ' Solar output trended <span class="hl-solar">upward</span> over the period.';
+    else if (delta < -0.15) trendNote = ' Solar output trended <span class="hl-dis">downward</span> over the period.';
+    else                     trendNote = ' Solar output was relatively <span class="hl">stable</span> across the period.';
+  }
+
+  const rows = [
+    {
+      label: 'Overview',
+      body:  `Over <span class="hl">${n} day${n!==1?'s':''}</span>, solar generated
+              <span class="hl-solar">${f2(T.solar)} kWh</span> and home consumption was
+              <span class="hl-load">${f2(T.load)} kWh</span> — averages of
+              <span class="hl-solar">${f2(avgSolar)} kWh/day</span> solar and
+              <span class="hl-load">${f2(avgLoad)} kWh/day</span> load.${trendNote}`
+    },
+    {
+      label: 'Self-Sufficiency',
+      body:  `Solar covered <span class="${sufClass}">${f1(suf)}%</span> of home consumption. ${sufVerdict}
+              ${surplus >= 0
+                ? `A surplus of <span class="hl-solar">${f2(surplus)} kWh</span> was available for battery charging.`
+                : `There was a shortfall of <span class="hl-dis">${f2(Math.abs(surplus))} kWh</span>, covered by battery discharge.`
+              }`
+    },
+    {
+      label: 'Battery',
+      body:  `<span class="hl-charged">${f2(T.charged)} kWh</span> charged ·
+              <span class="hl-dis">${f2(T.discharged)} kWh</span> discharged ·
+              net <span class="hl ${netC}">${T.net >= 0 ? '+' : ''}${f2(T.net)} kWh</span>.
+              ${posDays} day${posDays!==1?'s':''} net-positive, ${negDays} net-negative.
+              ${avgSocVal !== null ? `Average daily peak SOC: <span class="hl-soc">${f1(avgSocVal)}%</span>.` : ''}
+              ${cdComment}`
+    },
+    {
+      label: 'Notable Days',
+      body:  `Best solar: <span class="hl">${bestSolar.date}</span> (<span class="hl-solar">${f3(bestSolar.solar)} kWh</span>) ·
+              Least solar: <span class="hl">${leastSolar.date}</span> (<span class="hl-dis">${f3(leastSolar.solar)} kWh</span>) ·
+              Peak load: <span class="hl">${peakLoad.date}</span> (<span class="hl-load">${f3(peakLoad.load)} kWh</span>) ·
+              Best battery day: <span class="hl">${bestNet.date}</span> (<span class="hl-solar">+${f3(bestNet.net)} kWh</span>) ·
+              Worst battery day: <span class="hl">${worstNet.date}</span> (<span class="hl-dis">${f3(worstNet.net)} kWh</span>).`
+    },
+  ];
+
+  if (T.charged > 0) {
+    rows.push({
+      label: 'Efficiency',
+      body:  `Discharge-to-charge ratio: <span class="hl">${f1(chargeRatio)}%</span>. ${cdComment}
+              Across the period, every kWh charged returned <span class="hl">${f2(T.discharged / T.charged)}</span> kWh of discharge.`
+    });
+  }
+
+  $id('aContent').innerHTML = rows.map(r =>
+    `<div class="arow"><div class="alabel">${r.label}</div><div class="abody">${r.body}</div></div>`
+  ).join('');
+}
+
+/* ────────────────────────────────────────────────
+   Boot
+──────────────────────────────────────────────── */
+psLoad();
+setInterval(psLoad, REFRESH_MS);
+eaAutoLoad();
+</script>
+</body>
+</html>
