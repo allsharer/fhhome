@@ -381,8 +381,7 @@ body {
     </div>
     <div class="chart-card">
       <div class="chart-title">
-        <span class="dot" style="background:var(--charged)"></span> Max &nbsp;
-        <span class="dot" style="background:var(--soc)"></span> Min — Daily Max and Min SOC (%)
+        Daily Max and Min SOC (%) — bar spans min → max
       </div>
       <canvas id="cSocEa" height="160"></canvas>
     </div>
@@ -828,36 +827,31 @@ function drawBattery(data) {
 }
 
 function drawSocEa(data) {
-  const labels = data.map(d => d.date.slice(5));
-  const minMap = {};
-  data.forEach(d => { if (d.minSoc > 0) minMap[d.date] = d.minSoc; });
-  mkChart('cSocEa', 'line', {
-    labels,
-    datasets: [
-      {
-        label: 'Max SOC',
-        data: data.map(d => d.maxSoc > 0 ? d.maxSoc : null),
-        borderColor: '#339af0', backgroundColor: '#339af015',
-        fill: false, tension: 0.35, borderWidth: 2,
-        pointRadius: 3, pointBackgroundColor: '#339af0', spanGaps: false,
-      },
-      {
-        label: 'Min SOC',
-        data: data.map(d => minMap[d.date] ?? null),
-        borderColor: '#cc5de8', backgroundColor: '#cc5de815',
-        fill: false, tension: 0.35, borderWidth: 2,
-        pointRadius: 3, pointBackgroundColor: '#cc5de8', spanGaps: false,
-      },
-    ]
+  mkChart('cSocEa', 'bar', {
+    labels: data.map(d => d.date.slice(5)),
+    datasets: [{
+      label: 'SOC Range',
+      data: data.map(d => (d.maxSoc > 0 && d.minSoc > 0) ? [d.minSoc, d.maxSoc] : null),
+      backgroundColor: '#cc5de855',
+      borderColor: '#cc5de8',
+      borderWidth: 1,
+      borderRadius: 3,
+      borderSkipped: false,
+    }]
   }, {
     responsive: true, maintainAspectRatio: true, animation: { duration: 250 },
     plugins: {
-      legend: LEGEND,
-      tooltip: { ...TIP, callbacks: { label: c => ` ${c.dataset.label}: ${c.raw.toFixed(1)}%` } }
+      legend: { display: false },
+      tooltip: { ...TIP, callbacks: {
+        label: c => Array.isArray(c.raw)
+          ? ` Min: ${c.raw[0].toFixed(1)}%  ·  Max: ${c.raw[1].toFixed(1)}%  ·  Range: ${(c.raw[1]-c.raw[0]).toFixed(1)}%`
+          : ''
+      }}
     },
     scales: {
       x: { ticks: { ...TICK, maxTicksLimit: 14 }, grid: { color: GRID } },
-      y: { min: 0, max: 100, ticks: TICK, grid: { color: GRID }, title: { display: true, text: '%', color: '#8b949e', font: { size: 10 } } }
+      y: { min: 0, max: 100, ticks: TICK, grid: { color: GRID },
+           title: { display: true, text: '%', color: '#8b949e', font: { size: 10 } } }
     }
   });
 }
