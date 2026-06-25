@@ -527,12 +527,12 @@ function renderPsCards(d) {
   const batSub = $id('pBatterySub');
   if (d.battery_w > 0) {
     batEl.textContent = '+' + ri(d.battery_w) + ' W';
-    batEl.className   = 'card-value c-solar';
-    batSub.textContent = 'charging';
-  } else if (d.battery_w < 0) {
-    batEl.textContent = ri(d.battery_w) + ' W';
     batEl.className   = 'card-value c-dis';
     batSub.textContent = 'discharging';
+  } else if (d.battery_w < 0) {
+    batEl.textContent = ri(d.battery_w) + ' W';
+    batEl.className   = 'card-value c-solar';
+    batSub.textContent = 'charging';
   } else {
     batEl.textContent = '0 W';
     batEl.className   = 'card-value c-grey';
