@@ -21,7 +21,7 @@ TOKEN_FILE = os.path.expanduser('~/.config/fhhome/ha_token')
 CSV_SRC    = '/DATA/AppData/homeassistant/config/energy_log.csv'
 MAX_HIST   = 288   # 24 h at 5-min intervals
 
-DIVIDE_10  = {'sensor.fan_one_power'}
+DIVIDE_10  = set()  # no plugs currently over-report by ×10
 
 SENSORS = [
     'sensor.accumulated_soc',
