@@ -41,6 +41,7 @@ SENSORS = [
     'sensor.battery_daily_net',
     'sensor.bms_200_bms_148_soc',
     'sensor.bms_100_bms_50_soc',
+    'sensor.bms_lossigy_soc',
     'sensor.refrigerator_power',
     'sensor.microwave_power',
     'sensor.washer_power',
@@ -110,6 +111,7 @@ def main():
         'battery_net':      flt(states.get('sensor.battery_daily_net')),
         'bms148_soc':       flt(states.get('sensor.bms_200_bms_148_soc')),
         'bms50_soc':        flt(states.get('sensor.bms_100_bms_50_soc')),
+        'bms_lossigy_soc':  flt(states.get('sensor.bms_lossigy_soc')),
         'consumers': sorted([
             {'name': 'Refrigerator', 'w': flt(states.get('sensor.refrigerator_power'))},
             {'name': 'Microwave',    'w': flt(states.get('sensor.microwave_power'))},
