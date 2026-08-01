@@ -255,9 +255,10 @@ body {
     <div class="chart-title">
       <span class="dot" style="background:var(--solar)"></span> Solar &nbsp;
       <span class="dot" style="background:var(--load)"></span> Load &nbsp;
-      <span class="dot" style="background:var(--charged)"></span> Battery — 24h Power (W)
+      <span class="dot" style="background:var(--charged)"></span> Charging &nbsp;
+      <span class="dot" style="background:#fa5252"></span> Discharging — 24h Power (W)
     </div>
-    <canvas id="cPower" height="80"></canvas>
+    <canvas id="cPower" height="160"></canvas>
   </div>
 
   <div class="row2">
@@ -429,6 +430,17 @@ const f2 = n => (+n).toFixed(2);
 const f3 = n => (+n).toFixed(3);
 const ri = n => Math.round(+n);
 
+function tok(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+const DPR = () => window.devicePixelRatio || 1;
+function setCanvasSize(canvas, w, h) {
+  const d = DPR();
+  canvas.width  = w * d; canvas.height = h * d;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d'); ctx.scale(d, d); return ctx;
+}
+
 /* ────────────────────────────────────────────────
    Tab management
 ──────────────────────────────────────────────── */
@@ -482,6 +494,10 @@ function psRender(d, history) {
     renderSocChart(history);
   }
 }
+
+window.addEventListener('resize', () => {
+  if (psLastHistory.length) renderPowerChart(psLastHistory);
+});
 
 function renderPsHeader(d) {
   const updated = new Date(d.updated);
@@ -587,31 +603,84 @@ function renderConsumers(d) {
 }
 
 function renderPowerChart(history) {
-  const labels = history.map(h => new Date(h.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
-  if (psCharts.power) psCharts.power.destroy();
-  psCharts.power = new Chart($id('cPower').getContext('2d'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        psLine('Solar',   history.map(h => h.solar),   '#40c057'),
-        psLine('Load',    history.map(h => h.load),    '#fd7e14'),
-        psLine('Battery', history.map(h => h.battery), '#339af0'),
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: true, animation: { duration: 300 },
-      plugins: {
-        legend: { labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12, padding: 14 } },
-        tooltip: { ...TIP, callbacks: { label: c => ` ${c.dataset.label}: ${Math.round(c.raw)} W` } }
-      },
-      scales: {
-        x: { ticks: { ...TICK, maxTicksLimit: 12 }, grid: { color: GRID } },
-        y: { ticks: TICK, grid: { color: GRID },
-             title: { display: true, text: 'W', color: '#8b949e', font: { size: 10 } } }
-      }
+  const canvas = $id('cPower');
+  if (!canvas) return;
+  const W = canvas.parentElement.clientWidth - 32;
+  const H = 160;
+  const ctx = setCanvasSize(canvas, W, H);
+
+  const PAD = {t:8, r:8, b:28, l:44};
+  const iw  = W - PAD.l - PAD.r;
+  const ih  = H - PAD.t - PAD.b;
+
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const raw = history.filter(p => new Date(p.t).getTime() >= cutoff);
+  if (raw.length < 2) return;
+
+  const BUCKET = 15 * 60 * 1000;
+  const bucketMap = {};
+  for (const p of raw) {
+    const key = Math.floor(new Date(p.t).getTime() / BUCKET);
+    if (!bucketMap[key]) bucketMap[key] = {key, solar:[], load:[], batt:[]};
+    bucketMap[key].solar.push(p.solar   || 0);
+    bucketMap[key].load.push(p.load     || 0);
+    bucketMap[key].batt.push(p.battery  || 0);
+  }
+  const bavg = a => a.reduce((s, v) => s + v, 0) / a.length;
+  const pts = Object.values(bucketMap)
+    .sort((a, b) => a.key - b.key)
+    .map(b => ({t: new Date(b.key * BUCKET).toISOString(),
+                solar: bavg(b.solar), load: bavg(b.load), batt: bavg(b.batt)}));
+
+  const allV = pts.flatMap(p => [p.solar||0, p.load||0, Math.abs(p.batt||0)]);
+  const maxV = Math.max(...allV, 200);
+
+  const xp = i => PAD.l + (i / (pts.length - 1)) * iw;
+  const yp = v => PAD.t + ih - (Math.max(v, 0) / maxV) * ih;
+
+  ctx.strokeStyle = tok('--border');
+  ctx.lineWidth = 0.5;
+  [1,2,3].forEach(n => {
+    const y = PAD.t + ih - (n/4)*ih;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l+iw, y); ctx.stroke();
+    ctx.fillStyle = tok('--muted');
+    ctx.font = '10px system-ui';
+    ctx.textAlign = 'right';
+    ctx.fillText(ri(maxV*n/4)+'W', PAD.l-4, y+3.5);
+  });
+
+  ctx.fillStyle = tok('--muted');
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'center';
+  [1,2,3,4].forEach(n => {
+    const idx = Math.round((pts.length-1) * n/4);
+    if (idx < pts.length) {
+      const t = new Date(pts[idx].t);
+      ctx.fillText(t.getHours().toString().padStart(2,'0')+':00', xp(idx), PAD.t+ih+17);
     }
   });
+
+  function line(series, color) {
+    if (series.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(xp(series[0][0]), yp(series[0][1]));
+    for (let i = 1; i < series.length; i++) {
+      const mx = (xp(series[i-1][0]) + xp(series[i][0])) / 2;
+      const my = (yp(series[i-1][1]) + yp(series[i][1])) / 2;
+      ctx.quadraticCurveTo(xp(series[i-1][0]), yp(series[i-1][1]), mx, my);
+    }
+    ctx.lineTo(xp(series[series.length-1][0]), yp(series[series.length-1][1]));
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([]); ctx.stroke();
+  }
+
+  line(pts.map((p,i) => [i, p.solar||0]),               tok('--solar'));
+  line(pts.map((p,i) => [i, p.batt < 0 ? -p.batt : 0]), tok('--charged'));
+  line(pts.map((p,i) => [i, p.batt > 0 ?  p.batt : 0]), '#fa5252');
+  line(pts.map((p,i) => [i, p.load ||0]),                tok('--load'));
+
+  ctx.strokeStyle = tok('--border'); ctx.lineWidth = 1; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, PAD.t+ih); ctx.lineTo(PAD.l+iw, PAD.t+ih); ctx.stroke();
+
   const avg = psAvgSoc(history);
   setEl('pAvgSoc', avg !== null ? f1(avg) + '%' : '—');
 }
