@@ -547,7 +547,7 @@ function renderPsCards(d) {
   const batEl  = $id('pBattery');
   const batSub = $id('pBatterySub');
   if (d.battery_w > 0) {
-    batEl.textContent = '+' + ri(d.battery_w) + ' W';
+    batEl.textContent = ri(d.battery_w) + ' W';
     batEl.className   = 'card-value c-solar';
     batSub.textContent = 'charging';
   } else if (d.battery_w < 0) {
